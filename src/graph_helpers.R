@@ -1,24 +1,36 @@
-# make graph
-district_info <- function(plan, which_districts,
-                          precincts = TRUE){
+# get nodes and edges for graph based on districts
+options(dplyr.summarise.inform = FALSE)
+
+make_nodes_county <- function(nodes_vtd){
+  nodes_county <- group_by(nodes_vtd,county) %>%
+    summarise(pop=sum(pop)) %>%
+    ungroup()
+}
+
+make_edges_county <- function(edges_vtd){
+  edges_county <- edges_vtd %>%
+    filter(county1!=county2) %>%      # remove edges within counties
+    mutate(min=pmin(county1,county2),
+           max=pmax(county1,county2),
+           county1=min, county2=max) %>%
+    group_by(county1, county2) %>%
+    summarise(weight=sum(weight), .groups = ) %>%
+    ungroup()  
+}
+
+district_info <- function(plan, which_districts){
   district <- 
     filter(plan, district %in% which_districts)
-  which_counties <- unique(district$county)
   out <- list()
     
-  out$nodes_c <- filter(inputs$nodes_county,   
-                        county %in% which_counties)
-  out$edges_c <- filter(inputs$edges_county, 
-                        county1 %in% which_counties, 
-                        county2 %in% which_counties)
-    
-  if (precincts){
-    out$nodes_v <- filter(inputs$nodes_vtd, 
-                          vtd %in% district$vtd)
-    out$edges_v <- filter(inputs$edges_vtd, 
-                      vtd1 %in% district$vtd, 
-                      vtd2 %in% district$vtd)
-  }
+  out$nodes_v <- filter(inputs$nodes_vtd, 
+                        vtd %in% district$vtd)
+  out$edges_v <- filter(inputs$edges_vtd, 
+                    vtd1 %in% district$vtd, 
+                    vtd2 %in% district$vtd)
+  out$nodes_c <- make_nodes_county(out$nodes_v)
+  out$edges_c <- make_edges_county(out$edges_v)
+  
   return(out)
 }
 
@@ -35,7 +47,9 @@ make_graph <- function(nodes, edges, level="county",
   }
   
   G <- graph_from_data_frame(edges, directed=F)
-  V(G)[as.character(nodes[[level]])]$pop <- nodes$pop
+  if (length(V(G))>0){
+    V(G)[as.character(nodes[[level]])]$pop <- nodes$pop
+  }
   
   return(G)  
 }

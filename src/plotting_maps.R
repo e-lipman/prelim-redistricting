@@ -1,3 +1,7 @@
+#library(tigris)
+library(sf)
+geo <- readRDS(file.path("inputData","geo_data.RDS"))
+
 plot_edges <- function(g, edge_info, latlong1, latlong2=NULL, 
                       add_nodes = TRUE,   
                       color="black", linewidth=1, nodesize=1){

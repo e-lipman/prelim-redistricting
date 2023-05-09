@@ -23,10 +23,11 @@ get_external_edges <- function(merged,
   return(selected_edges)
 }
 
-expand_node <- function(tree, node, subtree_info, pop, eps){
+expand_node <- function(tree, node, subtree_info, pop, eps, merged){
   # make district graph
   G_v <- make_graph(merged$nodes_v, merged$edges_v,
                     "vtd",node)
+  if (length(V(G_v))<2){return(list(tibble()))}
   
   # get external edges
   external_edges <- get_external_edges(merged, node, 
@@ -75,8 +76,8 @@ get_nodes_to_expand <- function(tree, node, pop, eps,
   
   # check all subtree combinations to see if worth expanding
   C_list <- list()
-  if (all(C_pops<pop+eps)){
-    for (i in 1:(length(C_pops)-1)){
+  if (all(c(C_pops)<pop+eps)){
+    for (i in 1:max((length(C_pops)-1),1)){
       if (i==1){idx <- matrix(1)}
       else {idx <- rbind(1, combn(2:length(C_pops), i-1))}
       for (c in 1:ncol(idx)){
@@ -100,11 +101,11 @@ get_nodes_to_expand <- function(tree, node, pop, eps,
 }
 
 
-get_cut_candidates_multi <- function(tree,  
+get_cut_candidates_multi <- function(tree, merged,
                                      pop=NULL, eps=NULL,  
                                      eps_percent=.02){
   if (is.null(pop)){
-    pop=sum(V(tree)$pop/2)
+    pop = inputs$ideal_pop
   }  
   if (is.null(eps)){
     eps=eps_percent*pop
@@ -122,7 +123,7 @@ get_cut_candidates_multi <- function(tree,
   # expand nodes to find precinct edges
   cuts_v <- expand_bool %>% 
     mutate(res = map2(node, subtree_info, expand_node, 
-                tree=tree, pop=pop, eps=eps),
+                tree=tree, pop=pop, eps=eps, merged=merged),
            edge=map(res, ~(.x$edges)),
            tree=map(res, ~(.x$tree)),
            external=map(res, ~(.x$external_edges))) %>%

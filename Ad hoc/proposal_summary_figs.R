@@ -1,4 +1,4 @@
-source("sandbox.R")
+source(file.path("Ad hoc","demo_proposal.R"))
 library(scales)
 
 DISTRICTS <- c(1,3)
@@ -31,12 +31,12 @@ plot_plan_districts(plan_new, which_districts = DISTRICTS,
 ggsave(file.path(OUT_PATH, "vtd_tree_multi.jpeg"), height=4)
 
 ## step 0: Current plan
-plot_plan_districts(plan)
+plot_plan_districts(plan) 
 ggsave(file.path(OUT_PATH, "district_plot.jpeg"), height=3)
 
 ## step 1: choose two districts to merge
-plot_plan_districts(plan, which_districts = DISTRICTS) +
-  scale_fill_manual(values=c("1"=COLORS[1],"3"=COLORS[3]))
+plot_plan_districts(plan, which_districts = DISTRICTS) 
+  #scale_fill_manual(values=c("1"=COLORS[7],"3"=COLORS[3]))
 ggsave(file.path(OUT_PATH, "step1.jpeg"),
        height=4)
 
@@ -56,6 +56,10 @@ ggsave(file.path(OUT_PATH, "step3.jpeg"),
        height=4)
 
 ## step 4: draw spanning trees on expandable nodes
+vtd_tree <- filter(E_c, level=="vtd") %>% 
+  group_by(county) %>% 
+  filter((1:n())==1) %>%
+  ungroup()
 plot_plan_districts(plan, which_districts = DISTRICTS,
                     county_tree = T_c,
                     vtd_tree = vtd_tree,
