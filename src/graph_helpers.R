@@ -53,3 +53,11 @@ make_graph <- function(nodes, edges, level="county",
   
   return(G)  
 }
+
+tree_plot <- function(tree){
+  plot(tree, layout=layout_as_tree, 
+       vertex.label=paste0(V(tree)$name, "\n", 
+                           V(tree)$childpop, "\n"),
+       vertex.size=0,
+       edge.arrow.size=.1)
+}
