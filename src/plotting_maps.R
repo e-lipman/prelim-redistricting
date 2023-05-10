@@ -96,27 +96,32 @@ plot_plan_districts <- function(plan,
   }
   plan_subset <- plan_subset %>%
     group_by(county) %>%
-    mutate(split=length(unique(district))>1,
-           district = as.factor(district)) %>%
+    mutate(district = as.factor(district)) %>%
     ungroup()    
   
   # district info at county and vtd level
-  plan_counties <- filter(plan_subset, !split) %>%
-    select(fips, district) %>%
-    distinct() %>%
-    mutate(fips=as.character(fips))
+  split_counties <- plan %>%
+    count(county, district) %>%
+    group_by(county) %>%
+    summarise(n=n()) %>%
+    ungroup() %>%
+    filter(n>1) %>% pull(county)
+  plan_counties <- filter(plan_subset) %>%
+    mutate(fips=as.character(fips),
+           split=county %in% split_counties) %>%
+    select(fips, district,split) %>%
+    distinct()
   plan_vtd <- filter(plan_subset,
-                     county %in% vtd_tree$county)
-  split <- filter(plan_subset, split) 
+                     county %in% c(vtd_tree$county, split_counties))
   
   # subset shapefiles for plot
   county_subset <- right_join(geo$sf_county, plan_counties, by="fips")
-  vtd_subset <- right_join(geo$sf_vtd, split, by="vtd")
+  vtd_subset <- right_join(geo$sf_vtd, plan_vtd, by="vtd")
   
   # make plot
   if (color_districts){
     g <- ggplot() +
-      geom_sf(data=county_subset, aes(fill=district)) +
+      geom_sf(data=filter(county_subset, !split), aes(fill=district)) +
       geom_sf(data=vtd_subset, aes(fill=district),
               color=NA) +
       geom_sf(data=filter(geo$sf_county, fips %in% plan_subset$fips),
