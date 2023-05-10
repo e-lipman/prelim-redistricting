@@ -52,6 +52,8 @@ expand_node <- function(tree, node, subtree_info, pop, eps, merged){
   
   # find removable edges
   cuts_v <- V(tree_v)$name[between(V(tree_v)$childpop, 
+                                   pop-eps, pop+eps) &
+                             between(sum(V(tree)$pop)-V(tree_v)$childpop, 
                                    pop-eps, pop+eps)]
   
   # return edges, tree, external edges
@@ -112,7 +114,9 @@ get_cut_candidates_multi <- function(tree, merged,
   }
   
   # find county edges
-  cuts_c <- V(tree)$name[between(V(tree)$childpop, pop-eps, pop+eps)]
+  cuts_c <- V(tree)$name[between(V(tree)$childpop, pop-eps, pop+eps) 
+                         & between(sum(V(tree)$pop)-V(tree)$childpop, 
+                                   pop-eps, pop+eps)]
   
   # find node to expand
   expand_bool <- tibble(node=V(tree)$name) %>%
