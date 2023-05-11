@@ -1,29 +1,30 @@
 library(tidyverse)
+library(yaml)
 library(igraph)
-
-set.seed(2943)
-NUM_DISTRICTS <- 13
-NUM_SPLIT <- 13
 
 for (f in list.files("src", full.names = T)){
   print(f)
   source(f)
 }
 
+args <- list(seed_num=2, chain=1)
+set.seed(2943)
+
 # load data
 inputs <- readRDS(file.path("inputData","model_inputs_NC.RDS"))
+configs <- read_yaml("configs.yml")
 
-plan_init <- read_delim(file.path("inputData","NC", 
-                                  "HB1029_3rd_Edition.txt"),
-                   col_names = c("vtd","district")) %>%
-  left_join(inputs$xwalk, by="vtd") %>%
-  select(fips,county,county_name,county,vtd,district)
+plan_init <- inputs$seed_plans[[args$seed_num]]
 
+# run sampler function
 run_sampler <- function(iter, plan_init){
-  res <- matrix(nrow=nrow(plan_init), ncol=iter)
+  res <- matrix(nrow=length(plan_init), ncol=iter)
   
-  plan <- plan_init
-  linking <- initialize_linking_edges(plan_init)
+  plan <- select(inputs$nodes_vtd, vtd, county) %>%
+    mutate(district=plan_init)
+  linking <- initialize_linking_edges(plan)
+  trees <- map(1:configs$num_districts, initialize_trees_district,
+               plan=plan, linking=linking)
   
   for (i in 1:iter){
     print(i)
@@ -64,4 +65,5 @@ run_sampler <- function(iter, plan_init){
   return(res)
 }
 
-res <- run_sampler(100, plan_init)
+res <- run_sampler(1000, plan_init)
+

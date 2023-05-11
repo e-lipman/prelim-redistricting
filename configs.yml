@@ -1,0 +1,17 @@
+num_districts: 13
+max_split: 13
+
+plan_list: ["NC_2016Plan.txt", 
+            "HB1029_3rd_Edition.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand0_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand1_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand2_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand3_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand4_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand5_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand6_expanded.txt",
+            "gamma0_seed912311_popdiv0.02_initPlanRand7_expanded.txt"]
+            
+voting_data: 
+  pres12: "NC_PRESIDENT_12.txt"
+  pres16: "NC_PRESIDENT_16.txt"

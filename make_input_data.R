@@ -1,92 +1,92 @@
 library(tidyverse)
-library(igraph)
+library(yaml)
 
 input_path <- file.path("inputData","NC")
+configs <- read_yaml("configs.yml")
 
 ######################################
-#      Read various data sources     #
+#           make input data          #
 ######################################
 
-# county precinct crosswalk
+# precinct info
 xwalk <- read_delim(file.path(input_path,"NC_Counties.txt"),
-                       col_names = c("vtd","county")) %>%
+                    col_names = c("vtd","county")) %>%
   mutate(county_name=county, 
-         county=as.numeric(as.factor(county)))
+         county=as.character(as.numeric(as.factor(county)))) %>%
+  arrange(vtd)
 
-fips_xwalk <- read_delim(file.path(input_path,"NC_FIPS.txt"), 
-                       col_names = c("fips","county"), 
-                       delim="        ") %>%
-  mutate(county = gsub(" county","",tolower(county)))
-stopifnot(nrow(fips_xwalk)==length(unique(xwalk$county_name)))
-stopifnot(sort(unique(xwalk$county_name))==sort(fips_xwalk$county))
-xwalk <- left_join(xwalk, fips_xwalk, by=c("county_name"="county")) %>%
-  mutate(fips=as.character(fips))
+fips <- read_delim(file.path(input_path,"NC_FIPS.txt"),  
+                   col_names = c("fips","county"),  
+                   delim="        ") %>%
+  mutate(county = gsub(" county","",tolower(county)),
+         fips=as.character(fips))
 
-# population
 pop <- read_delim(file.path(input_path,"NC_Population.txt"),
-                       col_names = c("vtd","pop")) 
+                  col_names = c("vtd","pop")) %>%
+  arrange(vtd)
 
-# edges
-edges <- read_delim(file.path("inputData","NC","NC_Edges_Lengths.txt"),
+votes <- tibble(label=names(configs$voting_data),
+                votes=map(configs$voting_data,
+                          ~(read_delim(file.path(input_path, .x),
+                                       col_names = 1:5) %>%
+                              select_at(c(1,3,4)) %>%
+                              set_names(c("vtd","D","R"))))) %>%
+  unnest(c(votes)) %>%
+  pivot_wider(names_from=label, values_from=c("D","R")) %>%
+  arrange(vtd)
+
+## merge together
+num_vtd = max(xwalk$vtd)
+stopifnot(xwalk$vtd==1:num_vtd,
+          pop$vtd==1:num_vtd,
+          votes$vtd==1:num_vtd)
+
+stopifnot(nrow(fips)==length(unique(xwalk$county_name)))
+stopifnot(sort(unique(xwalk$county_name))==sort(fips$county))
+
+vtd_nodes <- 
+  left_join(xwalk, fips, by=c("county_name"="county")) %>%
+  left_join(pop, by="vtd") %>%
+  left_join(votes, by="vtd")
+
+stopifnot(vtd_nodes$vtd==1:num_vtd)
+
+# precinct-level edges
+vtd_edges <- read_delim(file.path("inputData","NC","NC_Edges_Lengths.txt"),
                     col_names = c("vtd1","vtd2","length")) %>%
   mutate(min=pmin(vtd1,vtd2),
          max=pmax(vtd1,vtd2),
          vtd1=min, vtd2=max) %>%     # reorder so vt1<vtd2
   select(vtd1,vtd2) %>%
   filter(vtd1!=-1, vtd2!=-1) %>%     # remove edges to outside
-  distinct()
-
-# check (IDs)
-stopifnot(length(unique(xwalk$county))==max(xwalk$county))
-stopifnot(length(unique(xwalk$vtd))==max(xwalk$vtd))
-stopifnot(length(unique(pop$vtd))==max(pop$vtd))
-stopifnot(length(unique(c(edges$vtd1, edges$vtd2)))==max(edges$vtd2))
-
-######################################
-#      nodes for each level          #
-######################################
-
-nodes_vtd <- full_join(pop, xwalk, by="vtd")
-stopifnot(nrow(xwalk)==nrow(pop), nrow(pop)==nrow(nodes_vtd))
-
-nodes_county <- group_by(nodes_vtd,county) %>%
-  summarise(pop=sum(pop)) %>%
-  ungroup()
-stopifnot(nrow(nodes_county)==max(nodes_county$county))
-  
-#######################################
-#      edges for each level          #
-######################################
-
-edges_vtd <- mutate(edges, weight=1) %>%
-  left_join(xwalk, by=c("vtd1"="vtd")) %>%
-  left_join(xwalk, by=c("vtd2"="vtd")) %>%
+  distinct() %>%
+  left_join(select(vtd_nodes, vtd, county), by=c("vtd1"="vtd")) %>%
+  left_join(select(vtd_nodes, vtd, county), by=c("vtd2"="vtd")) %>%
   rename(county1=county.x, county2=county.y)
 
-edges_county <- edges_vtd %>%
-  filter(county1!=county2) %>%      # remove edges within counties
-  mutate(min=pmin(county1,county2),
-         max=pmax(county1,county2),
-         county1=min, county2=max) %>%
-  group_by(county1, county2) %>%
-  summarise(weight=sum(weight)) %>%
-  ungroup()
+# seed plans
+plans <- map(configs$plan_list,
+             ~(read_delim(file.path(input_path, .x),
+                          col_names = c("vtd","district")) %>%
+                 arrange(vtd) %>% pull(district)))
+stopifnot(map_dbl(plans, length)==num_vtd)
+stopifnot(map_dbl(plans, max)==configs$num_districts)
 
-######################################
-#        write out inputs            #
-######################################
-inputs <- list(xwalk=xwalk,
-               nodes_vtd=nodes_vtd,
-               nodes_county=nodes_county,
-               edges_vtd=edges_vtd,
-               edges_county=edges_county)
+# other quantities
+ideal_pop <- sum(vtd_nodes$pop)/configs$num_districts
+
+# write out inputs
+inputs <- list(nodes_vtd=vtd_nodes,
+               edges_vtd=vtd_edges,
+               seed_plans=plans,
+               ideal_pop=ideal_pop)
 
 saveRDS(inputs, file.path("inputData","model_inputs_NC.RDS"))
-
 
 ######################################
 #          make geo data             #
 ######################################
+library(sf)
 library(tigris)
 library(housingData)
 
