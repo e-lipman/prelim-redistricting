@@ -104,6 +104,7 @@ get_nodes_to_expand <- function(tree, node, pop, eps,
 
 
 get_cut_candidates_multi <- function(tree, merged,
+                                     dont_split = character(0),
                                      pop=NULL, eps=NULL,  
                                      eps_percent=.02){
   if (is.null(pop)){
@@ -122,7 +123,8 @@ get_cut_candidates_multi <- function(tree, merged,
   expand_bool <- tibble(node=V(tree)$name) %>%
     mutate(subtree_info=map(V(tree)$name, get_nodes_to_expand,
                    tree=tree, pop=pop, eps=eps)) %>%
-    filter(map_dbl(subtree_info, nrow)>0)
+    filter(map_dbl(subtree_info, nrow)>0,
+           !node %in% dont_split)
   
   # expand nodes to find precinct edges
   cuts_v <- expand_bool %>% 

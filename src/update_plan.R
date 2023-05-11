@@ -58,57 +58,95 @@ update_plan <- function(tree_c, cut_edge, plan,
   return(plan_new)
 }
 
-update_district_pairs <- function(plan, 
-                                  pairs_old=NULL, which_update=NULL){
-  if (is.null(which_update)){
-    which_update <- unique(plan$district)
+get_district_pairs <- function(plan, which_districts=NULL){
+  if (is.null(which_districts)){
+    which_districts <- 1:NUM_DISTRICTS
   }
   pairs_new <- 
     select(inputs$edges_vtd,vtd1,vtd2) %>%
     left_join(select(plan, vtd, district), by=c("vtd1"="vtd")) %>%
     left_join(select(plan, vtd, district), by=c("vtd2"="vtd")) %>%
     filter(district.x!=district.y,
-           district.x %in% which_update | 
-             district.y %in% which_update) %>%
+           district.x %in% which_districts | 
+             district.y %in% which_districts) %>%
     mutate(district1=pmin(district.x,district.y),
            district2=pmax(district.x,district.y)) %>%
     select(district1, district2) %>%
-    distinct() %>%
-    mutate(cuttable_edges=NA_integer_)
-  if (!is.null(pairs_old)){
-    pairs_new <- filter(pairs_old, 
-           !district1 %in% which_update,
-           !district2 %in% which_update) %>%
-      bind_rows(pairs_new)
-  }
+    distinct() 
+  
   return(pairs_new)
 }
 
-# initialize_trees <- function(plan){
-#   # precinct trees by district
-#   dist_nodes <- select(plan, vtd, district) %>%
-#     left_join(select(inputs$nodes_vtd, vtd, pop), by="vtd") %>%
-#     nest(nodes=-district) %>%
-#     arrange(district)
-#   
-#   dist_edges <- select(inputs$edges_vtd,vtd1,vtd2) %>%
-#     left_join(select(plan, vtd, district), by=c("vtd1"="vtd")) %>% 
-#     left_join(select(plan, vtd, district), by=c("vtd2"="vtd")) %>% 
-#     filter(district.x==district.y) %>%
-#     select(district=district.x,vtd1,vtd2) %>%
-#     mutate(weight=1) %>%
-#     nest(edges=-district) %>%
-#     arrange(district)
-#   
-#   dist_trees <- full_join(dist_nodes, dist_edges, by="district") %>%
-#     mutate(dist_graph=map2(nodes, edges, 
-#                            make_graph, level="vtd"),
-#            dist_tree=map(dist_graph, draw_spanning_tree)) %>%
-#     select(district, tree=dist_tree)
-# }
-# 
-# initialize_num_cuttable(plan, dist_trees, which_districts){
-#   stopifnot(length(which_districts)==2)
-# }
+# functions for managing linking edges
 
+get_split_counties <- function(plan, which_districts=NULL){
+  if (is.null(which_districts)){
+    which_districts <- 1:NUM_DISTRICTS
+  }
+  split_counties <- 
+    count(plan, county, district) %>%
+    group_by(county) %>%
+    mutate(n_dist=n()) %>%
+    ungroup() %>%
+    filter(n_dist>1) %>%
+    arrange(county, district) %>%
+    mutate(idx=rep(paste0("district",1:2), nrow(.)/2)) %>%
+    select(-n_dist, -n) %>%
+    pivot_wider(names_from=idx, values_from="district") %>%
+    filter(district1 %in% which_districts | 
+             district2 %in% which_districts) %>%
+    select(district1, district2,county) 
+  
+  return(split_counties)
+}
 
+initialize_linking_edges <- function(plan){
+  # split counties
+  split_counties <- get_split_counties(plan) %>%
+    mutate(level="vtd")
+  
+  # additional edges
+  pairs <- get_district_pairs(plan)
+  n_extra <- NUM_SPLIT - nrow(split_counties)
+  extra_edges <- pairs %>%
+    anti_join(split_counties, by=c("district1","district2")) %>%
+    sample_n(n_extra) %>%
+    select(district1, district2) %>%
+    mutate(level="county", county=NA)
+  
+  linking_edges <- rbind(split_counties, extra_edges)
+  return(linking_edges)
+}
+
+update_linking_edges <- function(plan, cut_edge, 
+                                 l_old, which_districts){
+  
+  # edge from merging districts
+  l1 <- tibble(district1=min(which_districts), 
+               district2=max(which_districts),
+               level=cut_edge$level,
+               county=ifelse(level=="county",NA,cut_edge$county))
+  
+  # old linking edges from unchanged districts
+  l2 <- filter(l_old,
+               !district1 %in% which_districts,
+               !district2 %in% which_districts)
+  
+  # remaining split counties
+  l3 <- get_split_counties(plan, which_districts) %>%
+    filter(!district1 %in% which_districts | !district2 %in% which_districts) %>%
+    mutate(level="vtd")
+  
+  l_new <- rbind(l1,l2,l3)
+  
+  # additional remaining county edges
+  pairs <- get_district_pairs(plan, which_districts)
+  n_extra <- NUM_SPLIT - nrow(l_new)
+  l4 <- pairs %>%
+    anti_join(l_new, by=c("district1","district2")) %>%
+    sample_n(n_extra) %>%
+    select(district1, district2) %>%
+    mutate(level="county",county=NA)
+  
+  rbind(l_new,l4)
+}
