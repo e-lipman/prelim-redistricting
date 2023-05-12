@@ -14,7 +14,7 @@ make_edges_county <- function(edges_vtd){
            max=pmax(county1,county2),
            county1=min, county2=max) %>%
     group_by(county1, county2) %>%
-    summarise(weight=sum(weight), .groups = ) %>%
+    summarise(weight=n(), .groups = ) %>%
     ungroup()  
 }
 
@@ -46,10 +46,14 @@ make_graph <- function(nodes, edges, level="county",
     }
   }
   
-  G <- graph_from_data_frame(edges, directed=F)
-  if (length(V(G))>0){
-    V(G)[as.character(nodes[[level]])]$pop <- nodes$pop
+  if (nrow(edges)>0){
+    G <- graph_from_data_frame(edges, directed=F)
+    V(G)$name <- as.character(V(G)$name)
+  } else {
+    G <- igraph::make_graph(n=1, edges=numeric(0), directed=F)
+    V(G)$name <- as.character(nodes[[level]])
   }
+  V(G)[as.character(nodes[[level]])]$pop <- nodes$pop
   
   return(G)  
 }

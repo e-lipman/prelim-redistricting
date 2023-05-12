@@ -22,7 +22,8 @@ run_sampler <- function(iter, plan_init){
   
   plan <- select(inputs$nodes_vtd, vtd, county) %>%
     mutate(district=plan_init)
-  linking <- initialize_linking_edges(plan)
+  linking <- update_linking_edges(plan)
+  
   trees <- map(1:configs$num_districts, initialize_trees_district,
                plan=plan, linking=linking)
   

@@ -1,3 +1,4 @@
+# update district assignments based on cut edge
 update_plan <- function(tree_c, cut_edge, plan,
                         which_districts){
 
@@ -58,9 +59,10 @@ update_plan <- function(tree_c, cut_edge, plan,
   return(plan_new)
 }
 
+# update linking edges
 get_district_pairs <- function(plan, which_districts=NULL){
   if (is.null(which_districts)){
-    which_districts <- 1:NUM_DISTRICTS
+    which_districts <- 1:configs$num_districts
   }
   pairs_new <- 
     select(inputs$edges_vtd,vtd1,vtd2) %>%
@@ -77,11 +79,9 @@ get_district_pairs <- function(plan, which_districts=NULL){
   return(pairs_new)
 }
 
-# functions for managing linking edges
-
 get_split_counties <- function(plan, which_districts=NULL){
   if (is.null(which_districts)){
-    which_districts <- 1:NUM_DISTRICTS
+    which_districts <- 1:configs$num_districts
   }
   split_counties <- 
     count(plan, county, district) %>%
@@ -100,37 +100,25 @@ get_split_counties <- function(plan, which_districts=NULL){
   return(split_counties)
 }
 
-initialize_linking_edges <- function(plan){
-  # split counties
-  split_counties <- get_split_counties(plan) %>%
-    mutate(level="vtd")
-  
-  # additional edges
-  pairs <- get_district_pairs(plan)
-  n_extra <- NUM_SPLIT - nrow(split_counties)
-  extra_edges <- pairs %>%
-    anti_join(split_counties, by=c("district1","district2")) %>%
-    sample_n(n_extra) %>%
-    select(district1, district2) %>%
-    mutate(level="county", county=NA)
-  
-  linking_edges <- rbind(split_counties, extra_edges)
-  return(linking_edges)
-}
-
-update_linking_edges <- function(plan, cut_edge, 
-                                 l_old, which_districts){
+update_linking_edges <- function(plan, cut_edge=NULL, 
+                                 l_old=NULL, which_districts=NULL){
   
   # edge from merging districts
-  l1 <- tibble(district1=min(which_districts), 
-               district2=max(which_districts),
-               level=cut_edge$level,
-               county=ifelse(level=="county",NA,cut_edge$county))
+  if (!is.null(which_districts)){
+    l1 <- tibble(district1=min(which_districts), 
+                 district2=max(which_districts),
+                 level=cut_edge$level,
+                 county=ifelse(level=="county",NA,cut_edge$county))
+    
+    # old linking edges from unchanged districts
+    l2 <- filter(l_old,
+                 !district1 %in% which_districts,
+                 !district2 %in% which_districts)  
+  } else {
+    l1 <- tibble()
+    l2 <- tibble()
+  }
   
-  # old linking edges from unchanged districts
-  l2 <- filter(l_old,
-               !district1 %in% which_districts,
-               !district2 %in% which_districts)
   
   # remaining split counties
   l3 <- get_split_counties(plan, which_districts) %>%
@@ -141,12 +129,22 @@ update_linking_edges <- function(plan, cut_edge,
   
   # additional remaining county edges
   pairs <- get_district_pairs(plan, which_districts)
-  n_extra <- NUM_SPLIT - nrow(l_new)
+  n_extra <- configs$max_split - nrow(l_new)
   l4 <- pairs %>%
     anti_join(l_new, by=c("district1","district2")) %>%
     sample_n(n_extra) %>%
     select(district1, district2) %>%
     mutate(level="county",county=NA)
   
-  rbind(l_new,l4)
+  l_new <- rbind(l_new,l4)
+  
+  # check initial state connected
+  if (is.null(which_districts)){
+    stopifnot(is.connected(graph_from_data_frame(l_new)))
+  }
+  
+  return(l_new)
 }
+
+
+

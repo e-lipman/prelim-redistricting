@@ -1,28 +1,4 @@
 # functions for determining edges to split
-get_external_edges <- function(merged, 
-                               which_county, neighbors){
-  external_edges <- filter(merged$edges_v,
-                           county1!=county2,
-                           (county1==which_county |
-                              county2==which_county)) %>%
-    mutate(other_county = ifelse(county1==which_county,
-                                 county2, county1),
-           this_vtd = ifelse(county1==which_county,
-                             vtd1, vtd2)) %>%
-    filter(other_county %in% neighbors)
-  
-  selected_edges <- external_edges %>%
-    group_by(other_county) %>%
-    sample_n(1) %>% 
-    ungroup() %>%
-    select(other_county, this_vtd) %>%
-    unnest(other_county) %>%
-    mutate(other_county=as.character(other_county),
-           this_vtd=as.character(this_vtd))
-  
-  return(selected_edges)
-}
-
 expand_node <- function(tree, node, subtree_info, pop, eps, merged){
   # make district graph
   G_v <- make_graph(merged$nodes_v, merged$edges_v,
@@ -30,7 +6,7 @@ expand_node <- function(tree, node, subtree_info, pop, eps, merged){
   if (length(V(G_v))<2){return(list(tibble()))}
   
   # get external edges
-  external_edges <- get_external_edges(merged, node, 
+  external_edges <- get_external_edges(merged, tree,
                                        subtree_info$name)
   
   # add county pops to neighboring precinct
@@ -104,9 +80,10 @@ get_nodes_to_expand <- function(tree, node, pop, eps,
 
 
 get_cut_candidates_multi <- function(tree, merged,
+                                     cached_trees = NULL,
                                      dont_split = character(0),
-                                     pop=NULL, eps=NULL,  
-                                     eps_percent=.02){
+                                     eps_percent=.02,
+                                     pop=NULL, eps=NULL){
   if (is.null(pop)){
     pop = inputs$ideal_pop
   }  
@@ -139,3 +116,4 @@ get_cut_candidates_multi <- function(tree, merged,
   bind_rows(tibble(edge=cuts_c, county=cuts_c, level="county"),
             mutate(cuts_v, level="vtd"))
 }
+
