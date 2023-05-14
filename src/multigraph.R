@@ -41,17 +41,17 @@ draw_tree_one <- function(dist_info,
   draw_spanning_tree(G)  
 }
 
-initialize_trees_district <- function(plan, linking, which_district){
+initialize_trees_district <- function(plan, which_district){
   dist_info <- district_info(plan, which_district)
   
   # county tree
   T_c <- draw_tree_one(dist_info)
   
   # precinct trees for split county
-  split_counties <- linking %>%
-    filter(district1==which_district | district2==which_district,
-           level=="vtd") %>%
-    pull(county)
+  split_counties <- get_pairs(plan, which_district) %>%
+    filter(county1==county2,
+           district1==which_district | district2==which_district) %>%
+    pull(county1) %>% unique()
   T_v <- map(split_counties,
              draw_tree_one, dist_info=dist_info, level="vtd")
   edges_vc <- map(split_counties, get_external_edges, 
@@ -60,4 +60,80 @@ initialize_trees_district <- function(plan, linking, which_district){
   names(edges_vc) <- split_counties
   
   list(tree_c = T_c, tree_v = T_v, edges_vc = edges_vc)
+}
+
+merge_trees <- function(trees, merged, 
+                        which_districts, 
+                        level, 
+                        which_counties=NULL,
+                        which_vtd=NULL){
+  
+    # county tree
+    trees_c <- map(trees[which_districts], ~(.x$tree_c))
+    tree_c_merged <- trees_c[[1]] %u% trees_c[[2]]
+    
+    if (level=="county"){
+      tree_c_merged <-  tree_c_merged%>% 
+        add_edges(which_counties) %>% as.undirected()
+    }
+    V(tree_c_merged)$pop <- 
+      ifelse(!is.na(V(tree_c_merged)$pop_1), 
+             V(tree_c_merged)$pop_1,0) +
+      ifelse(!is.na(V(tree_c_merged)$pop_2), 
+             V(tree_c_merged)$pop_2,0) 
+      
+    tree_c_merged <- draw_spanning_tree(tree_c_merged)
+    out <- list(tree_c=tree_c_merged)
+    
+    # vtd tree
+    if (level=="vtd"){
+      trees_v <- map(trees[which_districts], ~(.x$tree_v[[which_counties]]))
+      tree_v_merged <- trees_v[[1]] %u% trees_v[[2]] %>%
+        add_edges(which_vtd) %>% as.undirected()
+        
+      V(tree_v_merged)$pop <- 
+        ifelse(!is.na(V(tree_v_merged)$pop_1), 
+               V(tree_v_merged)$pop_1,
+               V(tree_v_merged)$pop_2) 
+      
+      out$tree_v <- draw_spanning_tree(tree_v_merged)
+      
+      out$edges_vc <- map_df(trees[which_districts], 
+                         ~(.x$edges_vc[[which_counties]]))
+
+    }
+    
+    return(out)
+}
+
+count_cuts <- function(trees, linking){
+  which_districts <- c(linking$district1, linking$district2)
+  which_counties <- unique(c(linking$county1, linking$county2))
+  merged <- linking$merged[[1]]
+  
+  dont_split <- unlist(map(trees[which_districts], ~names(.x$tree_v)))
+  if (linking$level=="vtd"){
+    dont_split <- dont_split[!dont_split %in% which_counties]  
+  }
+  
+  if (linking$level=="county"){
+    tree_merged <- merge_trees(trees, merged,  which_districts, 
+                               linking$level, 
+                               which_counties=which_counties)  
+    E_c <- get_cut_candidates_multi(tree_merged$tree_c, merged, dont_split)
+  } else {
+    which_vtd <- as.character(c(linking$vtd1, linking$vtd2))
+    tree_merged <- merge_trees(trees, merged,  which_districts, 
+                               linking$level, 
+                               which_counties=which_counties,
+                               which_vtd=which_vtd) 
+    cached_vtrees <- list(tree_merged[2:3])
+    names(cached_vtrees) <- which_counties
+    
+    # get cut candidates prespecifying tree_v
+    E_c <- get_cut_candidates_multi(tree_merged$tree_c, 
+                                    merged, dont_split,
+                                    cached_vtrees = cached_vtrees)
+  }
+  return(nrow(E_c))
 }

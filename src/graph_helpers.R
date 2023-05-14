@@ -1,6 +1,6 @@
-# get nodes and edges for graph based on districts
 options(dplyr.summarise.inform = FALSE)
 
+# make node and edge data frames for subset of districts
 make_nodes_county <- function(nodes_vtd){
   nodes_county <- group_by(nodes_vtd,county) %>%
     summarise(pop=sum(pop)) %>%
@@ -34,6 +34,7 @@ district_info <- function(plan, which_districts){
   return(out)
 }
 
+# make graph from nodes and edges
 make_graph <- function(nodes, edges, level="county",
                        which_county=NULL){
   
@@ -56,12 +57,4 @@ make_graph <- function(nodes, edges, level="county",
   V(G)[as.character(nodes[[level]])]$pop <- nodes$pop
   
   return(G)  
-}
-
-tree_plot <- function(tree){
-  plot(tree, layout=layout_as_tree, 
-       vertex.label=paste0(V(tree)$name, "\n", 
-                           V(tree)$childpop, "\n"),
-       vertex.size=0,
-       edge.arrow.size=.1)
 }

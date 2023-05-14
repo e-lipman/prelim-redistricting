@@ -1,13 +1,20 @@
 # functions for determining edges to split
-expand_node <- function(tree, node, subtree_info, pop, eps, merged){
-  # make district graph
-  G_v <- make_graph(merged$nodes_v, merged$edges_v,
-                    "vtd",node)
-  if (length(V(G_v))<2){return(list(tibble()))}
+expand_node <- function(tree, node, subtree_info, pop, eps, merged,
+                        cached_vtrees){
   
-  # get external edges
-  external_edges <- get_external_edges(merged, tree,
-                                       subtree_info$name)
+  if (!node %in% names(cached_vtrees)){
+    # make district tree
+    G_v <- make_graph(merged$nodes_v, merged$edges_v,
+                      "vtd",node)
+    if (length(V(G_v))<2){return(list(tibble()))}
+    
+    # get external edges
+    external_edges <- get_external_edges(merged, tree, node)  
+  } else {
+    print(paste0("Using cached tree_v: ", node))
+    G_v <- cached_vtrees[[node]]$tree_v # graph is prespecified tree
+    external_edges <- cached_vtrees[[node]]$edges_vc
+  }
   
   # add county pops to neighboring precinct
   external_edges <- left_join(external_edges,
@@ -19,12 +26,12 @@ expand_node <- function(tree, node, subtree_info, pop, eps, merged){
       external_edges$pop[i]
   }
   
-  
-  # make spanning tree
-  tree_v <- draw_spanning_tree(G_v)
-  #plot(tree_v, layout=layout_as_tree, 
-  #     vertex.label=paste0(V(tree_v)$name, "\n", V(tree_v)$pop),
-  #     vertex.size=1)
+  if (!node %in% names(cached_vtrees)){
+    tree_v <- draw_spanning_tree(G_v)
+  } else {
+    # update childpop
+    tree_v <- add_node_childpop(G_v)
+  }
   
   # find removable edges
   cuts_v <- V(tree_v)$name[between(V(tree_v)$childpop, 
@@ -80,8 +87,8 @@ get_nodes_to_expand <- function(tree, node, pop, eps,
 
 
 get_cut_candidates_multi <- function(tree, merged,
-                                     cached_trees = NULL,
                                      dont_split = character(0),
+                                     cached_vtrees = list(),
                                      eps_percent=.02,
                                      pop=NULL, eps=NULL){
   if (is.null(pop)){
@@ -106,7 +113,8 @@ get_cut_candidates_multi <- function(tree, merged,
   # expand nodes to find precinct edges
   cuts_v <- expand_bool %>% 
     mutate(res = map2(node, subtree_info, expand_node, 
-                tree=tree, pop=pop, eps=eps, merged=merged),
+                tree=tree, cached_vtrees=cached_vtrees,
+                pop=pop, eps=eps, merged=merged),
            edge=map(res, ~(.x$edges)),
            tree=map(res, ~(.x$tree)),
            external=map(res, ~(.x$external_edges))) %>%
@@ -116,4 +124,3 @@ get_cut_candidates_multi <- function(tree, merged,
   bind_rows(tibble(edge=cuts_c, county=cuts_c, level="county"),
             mutate(cuts_v, level="vtd"))
 }
-
