@@ -18,15 +18,18 @@ plan_init <- inputs$seed_plans[[args$seed_num]]
 
 # run sampler function
 run_sampler <- function(iter, plan_init){
-  res <- matrix(nrow=length(plan_init), ncol=iter)
+  plans <- matrix(nrow=length(plan_init), ncol=iter)
   
-  plan <- select(inputs$nodes_vtd, vtd, county) %>%
+  plan <- select(inputs$nodes_vtd, vtd, county, fips, pop) %>%
     mutate(district=plan_init)
-  
+  print("initializing trees")
   trees <- map(1:configs$num_districts, initialize_trees_district,
                  plan=plan)
-  
+  print("initializing linking edges")
   linking <- update_linking_edges(plan, trees)
+  
+  # tracking
+  n_accept <- 0 
   
   for (i in 1:iter){
     print(i)
@@ -54,16 +57,20 @@ run_sampler <- function(iter, plan_init){
     # acceptance prob
     cuts_curr <- which_linking$n_cuts
     cuts_prop <- nrow(E_c)
-    accept <- cuts_prop/cuts_curr
+    accept_prob <- cuts_prop/cuts_curr
     print(paste("cuts:",cuts_prop, cuts_curr))
     
-    if (runif(1)<accept){
+    accept <- runif(1)<accept_prob
+    if (accept){
+      n_accept <- n_accept+1
       print(which_districts)
+      
       # cut edge and update plan
       cut_edge <- sample_n(E_c,1)
       
-      plan <- update_plan(T_c, cut_edge, plan, which_districts=which_districts)
-      linking <- update_linking_edges(plan, 
+      trees <- update_trees(T_c,cut_edge,which_districts,trees)
+      plan <- update_plan(trees, cut_edge, which_districts, plan)
+      linking <- update_linking_edges(plan, trees,
                                       cut_edge=cut_edge, 
                                       n_cut=nrow(E_c),
                                       merged=merged,
@@ -71,12 +78,11 @@ run_sampler <- function(iter, plan_init){
                                       which_districts=which_districts)
     }
     
-    # out 
-    res[,i] <- plan$district
+    plans[,i] <- plan$district
   }
   
-  return(res)
+  list(plans=plans, 
+       accept_rate=n_accept/iter)
 }
 
-res <- run_sampler(20, plan_init)
-
+res <- run_sampler(1000, plan_init)
