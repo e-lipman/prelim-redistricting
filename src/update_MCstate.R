@@ -77,14 +77,29 @@ update_trees <- function(tree_c, cut_edge,
   for (node in unlist(remaining_split)){
     old_comp <- ifelse(node %in% remaining_split[[1]], 1, 2)
     new_comp <- ifelse(node %in% V(tree1_c)$name, 1, 2)
+    
     if (old_comp!=new_comp){
       trees[[which_districts[new_comp]]]$tree_v[[node]] <- 
         trees[[which_districts[old_comp]]]$tree_v[[node]]  
       trees[[which_districts[old_comp]]]$tree_v[[node]] <- NULL
-      trees[[which_districts[new_comp]]]$edges_vc[[node]] <- 
-        trees[[which_districts[old_comp]]]$edges_vc[[node]]  
-      trees[[which_districts[old_comp]]]$edges_vc[[node]] <- NULL
     }
+    
+    # nullify external edges to resample
+    trees[[which_districts[new_comp]]]$edges_vc[[node]] <- NULL
+    trees[[which_districts[old_comp]]]$edges_vc[[node]] <- NULL
+    
+  }
+  return(trees)
+}
+
+resample_edges_vc <- function(which_district, trees, plan){
+  cntys <- setdiff(names(trees[[which_district]]$tree_v),
+                   names(trees[[which_district]]$edges_vc))
+  dist_info <- district_info(plan, which_district)
+  for (cnty in cntys){
+    external <- get_external_edges(dist_info, 
+                                   trees[[which_district]]$tree_c, cnty)
+    trees[[which_district]]$edges_vc[[cnty]] <- external
   }
   return(trees)
 }
@@ -145,7 +160,7 @@ update_linking_edges <- function(plan, trees,
     l1 <- tibble(district1=min(which_districts), 
                  district2=max(which_districts),
                  level=cut_edge$level,
-                 county1=NA, county2=NA,
+                 county1=cut_edge$county, county2=NA,
                  vtd1=NA,vtd2=NA,
                  n_cuts=n_cuts, merged=list(merged))
     
@@ -163,29 +178,31 @@ update_linking_edges <- function(plan, trees,
     filter(county1==county2,
            !district1 %in% which_districts | !district2 %in% which_districts) %>%
     group_by(county1,county2) %>%
-    sample_n(1) %>%
+    sample_n(min(1, nrow(.))) %>%
     ungroup() %>%
     mutate(merged = map2(district1, district2, 
                          ~district_info(plan, c(.x,.y))),
            level="vtd", n_cuts=NA)
-  if (nrow(l3)>0){
-    n_cuts <- map_int(1:nrow(l3), ~count_cuts(trees, l3[.x,]))
-    l3$n_cuts <- n_cuts  
+  
+  if(nrow(count(l3,district1,district2))!=nrow(l3)){
+    return(NULL) # illegal proposal has double linked edges
   }
   l_new <- rbind(l1,l2,l3)
   
   # additional remaining county edges
   n_extra <- configs$max_split - nrow(l_new)
-  l4 <- pairs %>%
+  done_l4=F
+  while(!done_l4){
+    l4 <- pairs %>% # select uniformly from county pairs
+    count(district1,district2,county1,county2) %>%
+    select(-n) %>%
     anti_join(l_new, by=c("district1","district2")) %>%
     sample_n(n_extra) %>%
     mutate(merged = map2(district1, district2, 
                          ~district_info(plan, c(.x,.y)))) %>%
     mutate(level="county", vtd1=NA, vtd2=NA,
            n_cuts=NA)
-  if (nrow(l4)>0){
-    n_cuts <- map_int(1:nrow(l4), ~count_cuts(trees, l4[.x,]))
-    l4$n_cuts <- n_cuts  
+    if (nrow(count(l4,district1,district2))==nrow(l4)){done_l4=T}
   }
   
   l_new <- rbind(l_new,l4) 
@@ -197,6 +214,3 @@ update_linking_edges <- function(plan, trees,
   
   return(l_new)
 }
-
-
-

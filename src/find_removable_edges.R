@@ -6,32 +6,31 @@ expand_node <- function(tree, node, subtree_info, pop, eps, merged,
     # make district tree
     G_v <- make_graph(merged$nodes_v, merged$edges_v,
                       "vtd",node)
-    if (length(V(G_v))<2){return(list(tibble()))}
+    tree_v <- draw_spanning_tree(G_v)
     
     # get external edges
     external_edges <- get_external_edges(merged, tree, node)  
   } else {
-    print(paste0("Using cached tree_v: ", node))
-    G_v <- cached_vtrees[[node]]$tree_v # graph is prespecified tree
+    #print(paste0("Using cached tree_v: ", node))
+    tree_v <- cached_vtrees[[node]]$tree_v # graph is prespecified tree
     external_edges <- cached_vtrees[[node]]$edges_vc
   }
   
   # add county pops to neighboring precinct
+  V(tree_v)$childpop_vtd <- V(tree_v)$childpop
+  V(tree_v)$pop_vtd <- V(tree_v)$pop
+  
   external_edges <- left_join(external_edges,
                               subtree_info,
                               by=c("other_county"="name"))
   for (i in 1:nrow(external_edges)){
-    V(G_v)[external_edges$this_vtd[i]]$pop <-
-      V(G_v)[external_edges$this_vtd[i]]$pop +
+    V(tree_v)[external_edges$this_vtd[i]]$pop <-
+      V(tree_v)[external_edges$this_vtd[i]]$pop +
       external_edges$pop[i]
   }
   
-  if (!node %in% names(cached_vtrees)){
-    tree_v <- draw_spanning_tree(G_v)
-  } else {
-    # update childpop
-    tree_v <- add_node_childpop(G_v)
-  }
+  # update childpop
+  tree_v <- add_node_childpop(tree_v)
   
   # find removable edges
   cuts_v <- V(tree_v)$name[between(V(tree_v)$childpop, 
@@ -40,6 +39,8 @@ expand_node <- function(tree, node, subtree_info, pop, eps, merged,
                                    pop-eps, pop+eps)]
   
   # return edges, tree, external edges
+  V(tree_v)$childpop <- V(tree_v)$childpop_vtd
+  V(tree_v)$pop <- V(tree_v)$pop_vtd
   return(list(edges=cuts_v, tree=tree_v, 
               external_edges=external_edges))
 }

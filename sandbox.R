@@ -1,5 +1,6 @@
 library(tidyverse)
 library(yaml)
+library(tictoc)
 library(igraph)
 
 for (f in list.files("src", full.names = T)){
@@ -8,7 +9,7 @@ for (f in list.files("src", full.names = T)){
 }
 
 args <- list(seed_num=2, chain=1)
-set.seed(2943)
+set.seed(2945)
 
 # load data
 inputs <- readRDS(file.path("inputData","model_inputs_NC.RDS"))
@@ -29,8 +30,9 @@ run_sampler <- function(iter, plan_init){
   linking <- update_linking_edges(plan, trees)
   
   # tracking
-  n_accept <- 0 
-  
+  n_accept <- 0
+
+  start=tic()
   for (i in 1:iter){
     print(i)
     
@@ -40,11 +42,11 @@ run_sampler <- function(iter, plan_init){
       .[,1:2] %>% unlist() %>% unname()
       
     dont_split <- linking %>% # dont split counties that are already split
-      filter(level=="vtd", 
+      filter(level=="vtd",
              !district1 %in% which_districts | 
                !district2 %in% which_districts) %>%
       pull(county1)
-  
+    
     merged <- which_linking$merged[[1]]
     
     G_c <- make_graph(merged$nodes_c, merged$edges_c)
@@ -54,35 +56,65 @@ run_sampler <- function(iter, plan_init){
     E_c <- get_cut_candidates_multi(T_c, merged,
                                     dont_split = dont_split)
     
+    if(is.na(which_linking$n_cuts)){
+      which_linking$n_cuts <- count_cuts(trees, which_linking)
+      linking$n_cuts[linking$district2==which_districts[1] &
+                       linking$district2==which_districts[2]] <-
+        which_linking$n_cuts
+    }
+    
     # acceptance prob
     cuts_curr <- which_linking$n_cuts
     cuts_prop <- nrow(E_c)
     accept_prob <- cuts_prop/cuts_curr
-    print(paste("cuts:",cuts_prop, cuts_curr))
     
     accept <- runif(1)<accept_prob
     if (accept){
       n_accept <- n_accept+1
-      print(which_districts)
+      print(paste0("merge districts: ", 
+                   paste0(which_districts, collapse=" ")))
       
       # cut edge and update plan
       cut_edge <- sample_n(E_c,1)
       
+      trees_bak <- trees
+      plan_bak <- plan
+      linking_bak <- linking
+      
       trees <- update_trees(T_c,cut_edge,which_districts,trees)
       plan <- update_plan(trees, cut_edge, which_districts, plan)
+      trees <- trees %>%
+        resample_edges_vc(which_district=which_districts[1], plan=plan) %>%
+        resample_edges_vc(which_district=which_districts[2], plan=plan)
+       
       linking <- update_linking_edges(plan, trees,
                                       cut_edge=cut_edge, 
                                       n_cut=nrow(E_c),
                                       merged=merged,
                                       l_old=linking, 
                                       which_districts=which_districts)
+      if (is.null(linking)){ # un-accept
+        trees <- trees_bak
+        plan <- plan_bak
+        linking <- linking_bak
+        n_accept <- n_accept - 1
+      }
     }
     
     plans[,i] <- plan$district
   }
+  end=toc()
   
   list(plans=plans, 
-       accept_rate=n_accept/iter)
+       accept_rate=n_accept/iter,
+       time=end$toc-end$tic)
 }
 
 res <- run_sampler(1000, plan_init)
+
+table(plan_init, res$plans[,1000])
+
+plan <- select(inputs$nodes_vtd, 
+               fips, county, vtd) %>%
+  mutate(district=res$plans[,1000])
+plot_plan_districts(plan)
