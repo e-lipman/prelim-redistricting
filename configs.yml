@@ -15,3 +15,9 @@ plan_list: ["NC_2016Plan.txt",
 voting_data: 
   pres12: "NC_PRESIDENT_12.txt"
   pres16: "NC_PRESIDENT_16.txt"
+
+default_args:
+  seed_num: 1
+  iter: 10
+  progress: 1
+  fldr: "test"

@@ -214,3 +214,17 @@ update_linking_edges <- function(plan, trees,
   
   return(l_new)
 }
+
+update_votes <- function(plan, which_districts=NULL){
+  if (is.null(which_districts)){
+    which_districts=1:configs$num_districts
+  }
+  plan %>%
+    filter(district %in% which_districts) %>%
+    group_by(district) %>%
+    summarise(D_votes=sum(D_votes),
+              R_votes=sum(R_votes),
+              percent_D = D_votes/(D_votes+R_votes)) %>%
+    arrange(district) %>% pull(percent_D)
+}
+  

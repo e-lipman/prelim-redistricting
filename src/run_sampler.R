@@ -1,46 +1,37 @@
-library(tidyverse)
-library(yaml)
-library(tictoc)
-library(igraph)
-
-for (f in list.files("src", full.names = T)){
-  print(f)
-  source(f)
+print_time <- function(str=""){
+  print(paste0(format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), ": ", str))
 }
 
-args <- list(seed_num=2, chain=1)
-set.seed(2945)
-
-# load data
-inputs <- readRDS(file.path("inputData","model_inputs_NC.RDS"))
-configs <- read_yaml("configs.yml")
-
-plan_init <- inputs$seed_plans[[args$seed_num]]
-
-# run sampler function
-run_sampler <- function(iter, plan_init){
-  plans <- matrix(nrow=length(plan_init), ncol=iter)
+run_sampler <- function(plan_init,
+                        iter=10, progress=1){
   
-  plan <- select(inputs$nodes_vtd, vtd, county, fips, pop) %>%
+  plan <- select(inputs$nodes_vtd, vtd, county, fips, pop,
+                 D_votes=D_pres12, R_votes=R_pres12) %>%
     mutate(district=plan_init)
-  print("initializing trees")
+  print_time("initializing trees")
   trees <- map(1:configs$num_districts, initialize_trees_district,
-                 plan=plan)
-  print("initializing linking edges")
+               plan=plan)
+  print_time("initializing linking edges")
   linking <- update_linking_edges(plan, trees)
   
   # tracking
   n_accept <- 0
-
+  percent_dem_curr <- update_votes(plan)
+  
+  # output quantities
+  plans <- matrix(nrow=length(plan_init), ncol=iter)
+  num_dem <- rep(NA, iter)
+  percent_dem_ord <- matrix(nrow=configs$num_districts, ncol=iter)
+  
   start=tic()
   for (i in 1:iter){
-    print(i)
+    if (i%%progress==0){print_time(i)}
     
     # choose two districts to merge
     which_linking <- sample_n(linking,1)
     which_districts <- which_linking %>% 
       .[,1:2] %>% unlist() %>% unname()
-      
+    
     dont_split <- linking %>% # dont split counties that are already split
       filter(level=="vtd",
              !district1 %in% which_districts | 
@@ -71,8 +62,8 @@ run_sampler <- function(iter, plan_init){
     accept <- runif(1)<accept_prob
     if (accept){
       n_accept <- n_accept+1
-      print(paste0("merge districts: ", 
-                   paste0(which_districts, collapse=" ")))
+      #print(paste0("merge districts: ", 
+      #             paste0(which_districts, collapse=" ")))
       
       # cut edge and update plan
       cut_edge <- sample_n(E_c,1)
@@ -86,7 +77,7 @@ run_sampler <- function(iter, plan_init){
       trees <- trees %>%
         resample_edges_vc(which_district=which_districts[1], plan=plan) %>%
         resample_edges_vc(which_district=which_districts[2], plan=plan)
-       
+      
       linking <- update_linking_edges(plan, trees,
                                       cut_edge=cut_edge, 
                                       n_cut=nrow(E_c),
@@ -99,22 +90,19 @@ run_sampler <- function(iter, plan_init){
         linking <- linking_bak
         n_accept <- n_accept - 1
       }
+      percent_dem_curr[which_districts] <- 
+        update_votes(plan, which_districts)
     }
     
     plans[,i] <- plan$district
+    num_dem[i] <- sum(percent_dem_curr>.5)
+    percent_dem_ord[,i] <- sort(percent_dem_curr)
   }
   end=toc()
   
   list(plans=plans, 
+       num_dem=num_dem,
+       percent_dem_ord=percent_dem_ord,
        accept_rate=n_accept/iter,
        time=end$toc-end$tic)
 }
-
-res <- run_sampler(1000, plan_init)
-
-table(plan_init, res$plans[,1000])
-
-plan <- select(inputs$nodes_vtd, 
-               fips, county, vtd) %>%
-  mutate(district=res$plans[,1000])
-plot_plan_districts(plan)
