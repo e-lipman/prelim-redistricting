@@ -47,7 +47,7 @@ run_sampler <- function(plan_init,
     E_c <- get_cut_candidates_multi(T_c, merged,
                                     dont_split = dont_split)
     
-    if(is.na(which_linking$n_cuts)){
+    if(is.na(which_linking$n_cuts) & nrow(E_c)>0){
       which_linking$n_cuts <- count_cuts(trees, which_linking)
       linking$n_cuts[linking$district2==which_districts[1] &
                        linking$district2==which_districts[2]] <-
@@ -55,11 +55,13 @@ run_sampler <- function(plan_init,
     }
     
     # acceptance prob
-    cuts_curr <- which_linking$n_cuts
-    cuts_prop <- nrow(E_c)
-    accept_prob <- cuts_prop/cuts_curr
+    if (nrow(E_c)>0){
+      cuts_curr <- which_linking$n_cuts
+      cuts_prop <- nrow(E_c)
+      accept_prob <- cuts_prop/cuts_curr  
+      accept <- runif(1)<accept_prob
+    } else {accept=0}
     
-    accept <- runif(1)<accept_prob
     if (accept){
       n_accept <- n_accept+1
       #print(paste0("merge districts: ", 
