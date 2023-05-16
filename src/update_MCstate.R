@@ -1,6 +1,6 @@
-update_trees <- function(tree_c, cut_edge,   
+update_trees <- function(tree_c, cut_edge,  
                          which_districts, trees){
-
+  
   if (cut_edge$level=="vtd"){
     # break precinct tree
     edge_v <- c(neighbors(cut_edge$tree[[1]], 
@@ -87,7 +87,37 @@ update_trees <- function(tree_c, cut_edge,
     # nullify external edges to resample
     trees[[which_districts[new_comp]]]$edges_vc[[node]] <- NULL
     trees[[which_districts[old_comp]]]$edges_vc[[node]] <- NULL
-    
+  }
+  
+  # remove all cached nonsplit edges 
+  trees[[which_districts[1]]]$tree_v_nonsplit <- list()
+  trees[[which_districts[1]]]$edges_vc_nonsplit <- list()
+  trees[[which_districts[2]]]$tree_v_nonsplit <- list()
+  trees[[which_districts[2]]]$edges_vc_nonsplit <- list()
+  
+  return(trees)
+}
+
+cache_vtrees <- function(edges_c, which_districts, trees, plan){
+  split <- map(trees[which_districts], ~names(.x$tree_v)) %>%
+    unlist()
+  new_trees <- filter(edges_c,
+                      level=="vtd", !county %in% split) %>%
+    select(county, tree, external) %>%
+    distinct()
+  if (nrow(new_trees)>0){
+    for (i in 1:nrow(new_trees)){
+      cnty <- new_trees$county[i]
+      print(paste0("caching tree for county ", cnty))
+      #plot_plan_districts(plan, which_districts, which_counties=cnty) %>%
+      #  print()
+      dist_i <- which(map_lgl( trees[which_districts],  
+                                   ~(cnty %in% V(.x$tree_c)$name)))
+      trees[[which_districts[dist_i]]]$trees_v_unsplit[[cnty]] <-
+        new_trees$tree[[i]]
+      trees[[which_districts[dist_i]]]$edges_vc_unsplit[[cnty]] <-
+        new_trees$external[[i]]
+    }
   }
   return(trees)
 }

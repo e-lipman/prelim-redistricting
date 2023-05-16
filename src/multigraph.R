@@ -59,7 +59,8 @@ initialize_trees_district <- function(plan, which_district){
   names(T_v) <- split_counties
   names(edges_vc) <- split_counties
   
-  list(tree_c = T_c, tree_v = T_v, edges_vc = edges_vc)
+  list(tree_c = T_c, tree_v = T_v, edges_vc = edges_vc,
+       tree_v_nonsplit = list(), edges_vc_nonsplit = list())
 }
 
 merge_trees <- function(trees, merged, 
@@ -135,5 +136,5 @@ count_cuts <- function(trees, linking){
                                     merged, dont_split,
                                     cached_vtrees = cached_vtrees)
   }
-  return(nrow(E_c))
+  return(E_c)
 }

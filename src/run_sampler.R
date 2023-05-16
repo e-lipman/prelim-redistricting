@@ -46,9 +46,9 @@ run_sampler <- function(plan_init,
     T_c <- draw_spanning_tree(G_c, directed=T)
     E_c <- get_cut_candidates_multi(T_c, merged,
                                     dont_split = dont_split)
-    
     if(is.na(which_linking$n_cuts) & nrow(E_c)>0){
-      which_linking$n_cuts <- count_cuts(trees, which_linking)
+      cut_info <- count_cuts(trees, which_linking)
+      which_linking$n_cuts <- nrow(cut_info)
       linking$n_cuts[linking$district2==which_districts[1] &
                        linking$district2==which_districts[2]] <-
         which_linking$n_cuts
@@ -95,6 +95,16 @@ run_sampler <- function(plan_init,
       percent_dem_curr[which_districts] <- 
         update_votes(plan, which_districts)
     }
+    
+    # cache new counties
+    if (accept){
+      trees <- cache_vtrees(E_c, which_districts, trees,
+                            plan)
+    } else if (nrow(E_c)>0 & !accept & !is.null(cut_info)){
+      trees <- cache_vtrees(cut_info, which_districts, trees,
+                            plan)
+    }
+    cut_info <- NULL
     
     plans[,i] <- plan$district
     num_dem[i] <- sum(percent_dem_curr>.5)
