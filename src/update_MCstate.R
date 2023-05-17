@@ -235,15 +235,14 @@ update_linking_edges <- function(plan, trees,
                          ~district_info(plan, c(.x,.y)))) %>%
     mutate(level="county", vtd1=NA, vtd2=NA,
            n_cuts=NA)
-    if (nrow(count(l4,district1,district2))==nrow(l4)){done_l4=T}
+    if (nrow(count(l4,district1,district2))==nrow(l4)){
+      if (is.null(which_districts)){
+        done_l4 = is_connected(graph_from_data_frame(rbind(l_new, l4)))
+      } else {done_l4=T}
+    }
   }
   
   l_new <- rbind(l_new,l4) 
-  
-  # check initial state connected
-  if (is.null(which_districts)){
-    stopifnot(is.connected(graph_from_data_frame(l_new)))
-  }
   
   return(l_new)
 }
