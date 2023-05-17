@@ -117,24 +117,36 @@ count_cuts <- function(trees, linking){
     dont_split <- dont_split[!dont_split %in% which_counties]  
   }
   
+  # get cached nonsplit counties
+  cached <- map(trees[which_districts], ~names(.x$tree_v_nonsplit))
+  dist_i <- c(rep(1,length(cached[[1]])), rep(2,length(cached[[2]])))
+  cached_vtrees <- list()
+  if (length(dist_i)>0){
+    for (i in 1:length(dist_i)){
+      cnty = unlist(cached)[i]
+      add <- list(
+        tree_v = trees[[which_districts[dist_i[i]]]]$tree_v_nonsplit[[cnty]],
+        edges_vc = trees[[which_districts[dist_i[i]]]]$edges_vc_nonsplit[[cnty]])
+      cached_vtrees[[cnty]] <- add
+    }
+  }
+  
+  # get merged
   if (linking$level=="county"){
     tree_merged <- merge_trees(trees, merged,  which_districts, 
                                linking$level, 
                                which_counties=which_counties)  
-    E_c <- get_cut_candidates_multi(tree_merged$tree_c, merged, dont_split)
+
   } else {
     which_vtd <- as.character(c(linking$vtd1, linking$vtd2))
     tree_merged <- merge_trees(trees, merged,  which_districts, 
                                linking$level, 
                                which_counties=which_counties,
                                which_vtd=which_vtd) 
-    cached_vtrees <- list(tree_merged[2:3])
-    names(cached_vtrees) <- which_counties
-    
-    # get cut candidates prespecifying tree_v
-    E_c <- get_cut_candidates_multi(tree_merged$tree_c, 
-                                    merged, dont_split,
-                                    cached_vtrees = cached_vtrees)
+    cached_vtrees[[which_counties]] <- tree_merged[2:3]
   }
+  E_c <- get_cut_candidates_multi(tree_merged$tree_c, 
+                                  merged, dont_split, 
+                                  cached_vtrees = cached_vtrees)
   return(E_c)
 }

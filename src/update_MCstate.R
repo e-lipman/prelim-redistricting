@@ -108,15 +108,18 @@ cache_vtrees <- function(edges_c, which_districts, trees, plan){
   if (nrow(new_trees)>0){
     for (i in 1:nrow(new_trees)){
       cnty <- new_trees$county[i]
-      print(paste0("caching tree for county ", cnty))
-      #plot_plan_districts(plan, which_districts, which_counties=cnty) %>%
-      #  print()
       dist_i <- which(map_lgl( trees[which_districts],  
                                    ~(cnty %in% V(.x$tree_c)$name)))
-      trees[[which_districts[dist_i]]]$trees_v_unsplit[[cnty]] <-
+      #print(paste0("caching tree for county ", cnty,
+      #             " in district ", which_districts[dist_i]))
+      trees[[which_districts[dist_i]]]$tree_v_nonsplit[[cnty]] <-
         new_trees$tree[[i]]
-      trees[[which_districts[dist_i]]]$edges_vc_unsplit[[cnty]] <-
-        new_trees$external[[i]]
+      trees[[which_districts[dist_i]]]$edges_vc_nonsplit[[cnty]] <-
+        select(new_trees$external[[i]], -pop)
+      
+      #cached <- map(trees, ~names(.x$tree_v_nonsplit))
+      #names(cached) <- 1:configs$num_districts
+      #print(cached[map_lgl(cached, length)>0])
     }
   }
   return(trees)
