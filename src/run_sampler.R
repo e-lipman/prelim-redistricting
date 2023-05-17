@@ -13,9 +13,11 @@ run_sampler <- function(plan_init,
                plan=plan)
   print_time("initializing linking edges")
   linking <- update_linking_edges(plan, trees)
+  cut_info <- NULL
   
   # tracking
   n_accept <- 0
+  n_propose <- 0
   percent_dem_curr <- update_votes(plan)
   
   # output quantities
@@ -56,6 +58,7 @@ run_sampler <- function(plan_init,
     
     # acceptance prob
     if (nrow(E_c)>0){
+      n_propose <- n_propose + 1
       cuts_curr <- which_linking$n_cuts
       cuts_prop <- nrow(E_c)
       accept_prob <- cuts_prop/cuts_curr  
@@ -64,7 +67,7 @@ run_sampler <- function(plan_init,
     
     if (accept){
       n_accept <- n_accept+1
-      #print(paste0("merge districts: ", 
+      #print(paste0("merging districts: ", 
       #             paste0(which_districts, collapse=" ")))
       
       # cut edge and update plan
@@ -116,5 +119,6 @@ run_sampler <- function(plan_init,
        num_dem=num_dem,
        percent_dem_ord=percent_dem_ord,
        accept_rate=n_accept/iter,
+       propose_rate=n_propose/iter,
        time=end$toc-end$tic)
 }
