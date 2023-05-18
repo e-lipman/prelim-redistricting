@@ -224,6 +224,10 @@ update_linking_edges <- function(plan, trees,
   
   # additional remaining county edges
   n_extra <- configs$max_split - nrow(l_new)
+  if (n_extra<0){
+    print("Its that very rare mystery bug, backtracking proposal")
+    return(NULL)
+  }
   done_l4=F
   while(!done_l4){
     l4 <- pairs %>% # select uniformly from county pairs
