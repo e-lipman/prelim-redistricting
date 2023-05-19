@@ -224,21 +224,26 @@ update_linking_edges <- function(plan, trees,
   
   # additional remaining county edges
   n_extra <- configs$max_split - nrow(l_new)
-  if (n_extra<0){
+  county_pairs <- pairs %>% # select uniformly from county pairs
+    count(district1,district2,county1,county2) %>%
+    select(-n) %>%
+    anti_join(l_new, by=c("district1","district2"))
+  
+  if (n_extra<0 | n_extra>nrow(county_pairs)){
+    print(n_extra)
+    print(nrow(county_pairs))
     print("Its that very rare mystery bug, backtracking proposal")
     return(NULL)
   }
+  
   done_l4=F
   while(!done_l4){
-    l4 <- pairs %>% # select uniformly from county pairs
-    count(district1,district2,county1,county2) %>%
-    select(-n) %>%
-    anti_join(l_new, by=c("district1","district2")) %>%
-    sample_n(n_extra) %>%
-    mutate(merged = map2(district1, district2, 
-                         ~district_info(plan, c(.x,.y)))) %>%
-    mutate(level="county", vtd1=NA, vtd2=NA,
-           n_cuts=NA)
+    l4 <-  county_pairs %>%
+      sample_n(n_extra) %>%
+      mutate(merged = map2(district1, district2, 
+                           ~district_info(plan, c(.x,.y)))) %>%
+      mutate(level="county", vtd1=NA, vtd2=NA,
+             n_cuts=NA)
     if (nrow(count(l4,district1,district2))==nrow(l4)){
       if (is.null(which_districts)){
         done_l4 = is_connected(graph_from_data_frame(rbind(l_new, l4)))
