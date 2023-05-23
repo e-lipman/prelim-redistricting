@@ -237,7 +237,9 @@ update_linking_edges <- function(plan, trees,
   }
   
   done_l4=F
-  while(!done_l4){
+  loop_reps=0
+  while(!done_l4 & (is.null(which_districts) | loop_reps<5)){
+    loop_reps = loop_reps + 1
     l4 <-  county_pairs %>%
       sample_n(n_extra) %>%
       mutate(merged = map2(district1, district2, 
@@ -249,6 +251,10 @@ update_linking_edges <- function(plan, trees,
         done_l4 = is_connected(graph_from_data_frame(rbind(l_new, l4)))
       } else {done_l4=T}
     }
+  } 
+  if (!done_l4){
+    print("hit the infinite loop catch condition")
+    return(NULL)
   }
   
   l_new <- rbind(l_new,l4) 
