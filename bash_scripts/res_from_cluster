@@ -1,0 +1,2 @@
+scp -r erlipman@cluster.stat.washington.edu:~/prelim/prelim-redistricting/results/$1 results/
+
