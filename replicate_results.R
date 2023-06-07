@@ -2,33 +2,36 @@ library(tidyverse)
 library(ggridges)
 
 FLDR <- "res"
-iter <- 20000
-seeds <- setdiff(1:10, 2)
+iter <- 200000
+seeds <- 1:10
+thin <- 20
 
 source("src//violin_plot.R")
 
 res <- map(seeds, 
            ~readRDS(file.path("results",
-                              paste0(FLDR,iter), 
+                              paste0(FLDR,format(iter, scientific = F),
+                                     "_thin",thin), 
                               paste0("seed",.x,"_",iter,".RDS"))))
 
 num_dem <- tibble(seed=seeds,
        num_dem=map(res, ~(.x$num_dem))) %>%
   unnest(num_dem) %>%
-  mutate(iter=rep(1:iter, length(seeds))) %>%
+  mutate(iter=rep(seq(thin,iter,thin), length(seeds))) %>%
   rename(k=num_dem)
 
 pdem_district <- tibble(seed=seeds, 
                         p_dem=map(res, ~as_tibble(t(.x$percent_dem_ord))))  %>%
   unnest(p_dem) %>%
-  mutate(iter=rep(1:iter, length(seeds))) %>%
+  mutate(iter=rep(seq(thin,iter,thin), length(seeds))) %>%
   pivot_longer(-c(seed,iter), names_to="dist_rank", values_to="p_dem",
                names_prefix = "V") %>%
   mutate(dist_rank = as.factor(as.numeric(dist_rank)),
          k=cut(p_dem, breaks=seq(0,1,.002), include.lowest = T))
 
 get_tv <- function(dat, which_iter, s1, 
-                   s2=NULL){
+                   s2=NULL,quiet=F){
+  if (!quiet){print(which_iter)}
   props <- filter(dat, 
          iter<=which_iter, seed%in%c(s1,s2)) %>%
     count(seed, k) %>%
@@ -56,7 +59,7 @@ get_tv_avg <- function(dat, which_iter, s1, s2=NULL){
   tv_list <- rep(NA,NUM_DIST)
   for (i in 1:NUM_DIST){
     tv_list[i] <- filter(dat, dist_rank==i) %>% 
-      get_tv(which_iter, s1, s2)
+      get_tv(which_iter, s1, s2, quiet=T)
   } 
   mean(tv_list)
 }
@@ -67,7 +70,7 @@ get_tv_avg <- function(dat, which_iter, s1, s2=NULL){
 
 # get max TV for num dem 
 min_iter <- 1000
-step <- 100
+step <- 1000
 rerun <- F
 if (rerun){
   TV_all <- cross_df(list(s1=seeds, 
@@ -111,8 +114,11 @@ TV_max %>%
   scale_y_log10(paste0("Largest total variation on average\n",
                        "distribution of elected democrats"),
                 breaks=c(.01,.1,1), limits=c(.01,1)) +
-  theme_bw()+
-  theme(legend.position = "top")
+  theme_bw() +
+  theme(legend.position = c(.01, .01), 
+        legend.justification = c("left", "bottom"))
+#ggsave(file.path("figures","figures_7b.jpeg"),
+#       height=2.7)
 ggsave(file.path("figures","figures_7b.jpeg"),
        height=3.25)
 
@@ -121,10 +127,10 @@ chains_max_TV <- TV_max_pairwise[1,1:2] %>% unlist()
 barplot_by_chain <- num_dem %>%
   filter(seed %in% chains_max_TV) %>%
   count(seed, k) %>%
-  mutate(p=n/iter)
+  mutate(p=n/(iter/thin))
 barplot_total <- num_dem %>%
   count(k) %>%
-  mutate(p=n/(length(seeds)*iter))
+  mutate(p=n/(length(seeds)*(iter/thin)))
 
 barplot_by_chain %>% 
   ggplot(aes(x=k, y=100*p)) +
@@ -135,8 +141,10 @@ barplot_by_chain %>%
                      breaks=0:13) +
   scale_y_continuous(paste0("Percentage of samples yielding a\n",
                             "given number of elected Democrats"),
-                     limits=c(0,60), breaks=seq(0,60,10)) +
+                     limits=c(0,50), breaks=seq(0,50,10)) +
   theme_bw()
+#ggsave(file.path(file.path("figures","figures_7a.jpeg")),
+#       height = 2.75)
 ggsave(file.path(file.path("figures","figures_7a.jpeg")),
        height = 2.75)
 
@@ -173,14 +181,14 @@ if (rerun){
 best_fit <- lm(log(TV_max$TV)~log(TV_max$which_iter)) %>%
   summary() %>% .[["coefficients"]] %>% .[,1] %>% unlist()
 best_fit_func <- function(x){exp(best_fit[1])*x^best_fit[2]}
-best_fit_func2 <- function(x){30*x^(-.48)} # Autry
+#best_fit_func2 <- function(x){30*x^(-.48)} # Autry
 
 ghost_lines <- tibble(which_iter=c(1000,1000,1000), 
                       TV=c(1,1,1),
                       label=c("Max total variation",
                               paste0("Best fit x^",round(best_fit[2],2)),
                               "Best fit from Autry et al")) %>%
-  .[c(1,3),]
+  .[c(1,2),]
 
 TV_max %>% 
   ggplot(aes(x=which_iter, y=TV)) +
@@ -190,7 +198,7 @@ TV_max %>%
   # plot results
   geom_line() +
   #stat_function(fun=best_fit_func, linetype="dashed") +
-  stat_function(fun=best_fit_func2, linetype="dashed") +
+  stat_function(fun=best_fit_func, linetype="dashed") +
   scale_x_log10("Proposals",limits=c(1000,2000000),
                 breaks=10^(3:6)) + 
   scale_y_log10(paste0("Largest average total variation\n",
@@ -198,9 +206,11 @@ TV_max %>%
                 limits=c(.02,1.1),
                 breaks=c(.1,1)) +
   #guides(linetype=guide_legend(nrow=2,byrow=TRUE)) +
-  theme_bw()+
-  theme(legend.position = "top")
+  theme_bw() +
+  theme(legend.position = c(.01, .01), 
+        legend.justification = c("left", "bottom"))
 
+#ggsave(file.path("figures","figures_8b.jpeg"), height=2.7)
 ggsave(file.path("figures","figures_8b.jpeg"), height=3.25)
 
 # Violin plot for percent democrats
@@ -220,21 +230,40 @@ pdem_district %>%
   theme_bw() +
   theme(axis.text.x=element_text(angle=90, vjust=.3, hjust=1))
 
-ggsave(file.path("figures","figures_8a.jpeg"), height=2.25)
+ggsave(file.path("figures","figures_8a.jpeg"), height=2.75, width=4.25)
 
 # Example plans
 source("src//plotting_maps.R")
-res1 <- res[[1]]$plans
+res1 <- readRDS(file.path("results",
+                          paste0(FLDR,format(iter, scientific = F)), 
+                          paste0("seed",1,"_",iter,".RDS")))$plans
+
 inputs <- readRDS(file.path("inputData","model_inputs_NC.RDS")) 
 plan1 <- inputs$seed_plans[[1]]
-table(res1[,16], res1[,17])
+table(res1[,12]==res1[,5])a
 
-# acccept iter: 5, 12, 16, 17
+# accept iter: 1, 5, 12, 16, 17
 iter <- c(1,12,17,10000)
 for (i in 1:length(iter)){
+  print(i)
   plani <- mutate(inputs$nodes_vtd, district=res1[,iter[i]])  
-  plot_plan_districts(plani)
+  if (i>1){
+    most_overlap <- map_chr(1:13,
+                            ~names(sort(table(plan1[plani$district==.x]),
+                                        decreasing = T))[1]) %>% as.numeric() 
+    repeats <- names(table(most_overlap))[table(most_overlap)>1]
+    missing <- setdiff(1:13, most_overlap)
+    stopifnot(length(repeats)<=1, length(missing)<=1)
+    most_overlap[most_overlap==repeats] <- c(missing, repeats)
+    
+    plani <- left_join(plani,
+                       tibble(district=1:13, 
+                              district_map=most_overlap), by="district") %>%
+      select(-district) %>% rename(district=district_map)
+  }
+  
+  plot_plan_districts(plani, vtd_borders = F) 
   ggsave(file.path(file.path("figures",
                              paste0("fig6",letters[i],".jpeg"))),
-         height=2)
+         height=1.25, width=3)
 }

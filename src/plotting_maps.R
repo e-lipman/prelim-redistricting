@@ -4,13 +4,18 @@ geo <- readRDS(file.path("inputData","geo_data.RDS"))
 
 plot_edges <- function(g, edge_info, latlong1, latlong2=NULL, 
                       add_nodes = TRUE,   
-                      color="black", linewidth=1, nodesize=1){
+                      color="black",nodecolor="black", linewidth=1, nodesize=1,
+                      weight_edges=F){
   if (is.null(latlong2)){
     latlong2 <- latlong1
   }
   
   # make names consistant
-  edge_info <- set_names(edge_info, c("id1","id2"))
+  if (!weight_edges){
+    edge_info <- set_names(edge_info, c("id1","id2"))
+  } else {
+    edge_info <- set_names(edge_info, c("id1","id2","wt"))
+  }
   latlong1 <- set_names(latlong1, c("id","lat","lon"))
   latlong2 <- set_names(latlong2, c("id","lat","lon"))
   
@@ -19,16 +24,25 @@ plot_edges <- function(g, edge_info, latlong1, latlong2=NULL,
     inner_join(latlong1, by=c("id1"="id")) %>%
     inner_join(latlong2, by=c("id2"="id"))
   
-  out <- g + 
-    geom_segment(data=edges_latlong,
-                 aes(x=lon.x, y=lat.x, xend=lon.y, yend=lat.y),
-                 color=color, linewidth=linewidth)
+  if (!weight_edges){
+    out <- g + 
+      geom_segment(data=edges_latlong,
+                   aes(x=lon.x, y=lat.x, xend=lon.y, yend=lat.y),
+                   color=color, linewidth=linewidth)  
+  } else {
+    out <- g + 
+      geom_segment(data=edges_latlong,
+                   aes(x=lon.x, y=lat.x, xend=lon.y, yend=lat.y,
+                       linewidth=wt),
+                   color=color) +
+      scale_linewidth_continuous(range=.15*c(1,17))
+  }
   if (add_nodes){
     out <- out + 
       geom_point(data=edges_latlong, aes(x=lon.x, y=lat.x), 
-                 size=nodesize, color=color) +
+                 size=nodesize, color=nodecolor) +
       geom_point(data=edges_latlong, aes(x=lon.y, y=lat.y), 
-                 size=nodesize, color=color)
+                 size=nodesize, color=nodecolor)
   }
   return(out)
 }
@@ -79,12 +93,16 @@ plot_plan_districts <- function(plan,
                                 county_tree=NULL,
                                 vtd_tree=NULL,
                                 color_districts=TRUE,
-                                highlight=NULL){
+                                highlight=NULL,
+                                vtd_borders=T){
   if (is.null(vtd_tree)){
     vtd_tree <- tibble(county=character(0))
   } 
   if (!is.null(which_counties)){
     vtd_tree <- filter(vtd_tree, county %in% which_counties)
+  }
+  if (is.numeric(plan)){
+    plan <- inputs$nodes_vtd %>% mutate(district=plan)
   }
 
   plan_subset <- plan
@@ -126,16 +144,17 @@ plot_plan_districts <- function(plan,
               color=NA) +
       geom_sf(data=filter(geo$sf_county, fips %in% plan_subset$fips),
               fill=NA) +
-      geom_sf(data=filter(geo$sf_vtd, vtd %in% plan_vtd$vtd),
-              fill=NA, linetype="dotted") +
+      #geom_sf(data=filter(geo$sf_vtd, vtd %in% plan_vtd$vtd & 
+      #                      vtd_borders),
+      #        fill=NA, linetype="dotted") +
       theme_void() +
       theme(legend.position = "none")  
   } else {
     g <- ggplot() +
       geom_sf(data=filter(geo$sf_county, fips %in% plan_subset$fips),
-              fill=NA) +
-      geom_sf(data=filter(geo$sf_vtd, vtd %in% plan_vtd$vtd),
-              fill=NA, linetype="dotted") +
+              fill="gray") +
+      #geom_sf(data=filter(geo$sf_vtd, vtd %in% plan_vtd$vtd),
+      #        fill="gray", linetype="dotted") +
       theme_void() +
       theme(legend.position = "none")
   }
@@ -175,7 +194,7 @@ add_spanning_trees <- function(g, plan_subset,
       set_names(c("vtd1","vtd2")) %>%
       filter(vtd1 %in% vtd_v, vtd2 %in% vtd_v)
     g <- plot_edges(g, edges_v, select(geo$latlong_vtd, -county),
-                    linewidth=.5)
+                    linewidth=.5, color="gray15", nodesize=.5)
     
     # add edges between expanded and non-expanded counties
     edges_vc <- reduce(vtd_tree$external,rbind) %>%
@@ -185,19 +204,21 @@ add_spanning_trees <- function(g, plan_subset,
                     geo$latlong_county, linewidth=.75)
     
     # add edges between expanded counties
-    county_pairs <- vtd_tree %>%
-      select(edge, county, external) %>% unnest(external) %>%
-      filter(other_county %in% vtd_tree$county) %>%
-      select(county1=county, county2=other_county) %>%
-      filter(county1<county2)
-    edges_v2 <- county_pairs %>%
-      left_join(vtd_tree, by=c("county1"="county")) %>%
-      left_join(vtd_tree, by=c("county2"="county")) %>%
-      select(county1, county2, vtd1=edge.x, vtd2=edge.y)
-    g <- plot_edges(g, 
-                    select(edges_v2, vtd1, vtd2), 
-                    select(geo$latlong_vtd,-county),
-                    add_nodes = F, linewidth=.75)
+    if (length(unique(vtd_tree$county))>1){
+      county_pairs <- vtd_tree %>%
+        select(edge, county, external) %>% unnest(external) %>%
+        filter(other_county %in% vtd_tree$county) %>%
+        select(county1=county, county2=other_county) %>%
+        filter(county1<county2)
+      edges_v2 <- county_pairs %>%
+        left_join(vtd_tree, by=c("county1"="county")) %>%
+        left_join(vtd_tree, by=c("county2"="county")) %>%
+        select(county1, county2, vtd1=edge.x, vtd2=edge.y)
+      g <- plot_edges(g, 
+                      select(edges_v2, vtd1, vtd2), 
+                      select(geo$latlong_vtd,-county),
+                      add_nodes = F, linewidth=.75)
+    }
   }
   
   # highlight cut candidtaes
@@ -216,41 +237,68 @@ plot_full_graph <- function(plan,
                             which_districts=NULL,
                             which_counties=NULL,
                             level="vtd",
-                            tree=T){
-  plan_subset <- plan
-  if (!is.null(which_counties)){
-    plan_subset <- filter(plan_subset, county %in% which_counties)
-  }
-  if (!is.null(which_districts)){
-    plan_subset <- filter(plan_subset, district%in% which_districts)
-  }
-  plan_subset <- plan_subset %>%
-    group_by(county) %>%
-    mutate(split=length(unique(district))>1,
-           district = as.factor(district)) %>%
-    ungroup()  
+                            tree=T, 
+                            color_districts=T,
+                            # these settings illustrate ReCom steps
+                            sep_districts=F,
+                            highlight=F,
+                            update_districts=F){
+  # plan_subset <- plan
+  # if (!is.null(which_counties)){
+  #   plan_subset <- filter(plan_subset, county %in% which_counties)
+  # }
+  # if (!is.null(which_districts)){
+  #   plan_subset <- filter(plan_subset, district%in% which_districts)
+  # }
+  # plan_subset <- plan_subset %>%
+  #   group_by(county) %>%
+  #   mutate(split=length(unique(district))>1,
+  #          district = as.factor(district)) %>%
+  #   ungroup() 
   
-  g <- plot_plan_districts(plan, which_districts, which_counties)
-  
+  if (level=="county"){
+    edges_c <- inputs$edges_vtd %>%
+      select(vtd1, vtd2, county1, county2) %>%
+      left_join(plan, by=c("vtd1"="vtd")) %>%
+      left_join(plan, by=c("vtd2"="vtd")) %>%
+      mutate(county1=pmin(county.x,county.y),
+             county2=pmax(county.x,county.y)) %>%
+      filter((district.x==district.y | !sep_districts),
+             district.x %in% which_districts,
+             district.y %in% which_districts,
+             county1!=county2) %>%
+      count(county1,county2)
+    
+    g <- plot_plan_districts(plan, which_districts, which_counties,
+                             color_districts = color_districts)
+    g <- plot_edges(g, edges_c,
+                    geo$latlong_county,
+                    weight_edges = T)
+  }
   if (level=="vtd"){
     edges_v <- inputs$edges_vtd %>%
       select(vtd1, vtd2) %>%
       left_join(plan, by=c("vtd1"="vtd")) %>%
       left_join(plan, by=c("vtd2"="vtd")) %>%
-      filter(district.x==district.y,
-             district.x %in% which_districts) %>%
+      filter((district.x==district.y | !sep_districts),
+             district.x %in% which_districts,
+             district.y %in% which_districts) %>%
       select(vtd1,vtd2,district=district.x)
     
     if (tree){
+      set.seed(12345)
+      nodes_v <- filter(inputs$nodes_vtd, 
+                        vtd %in% edges_v$vtd1 | 
+                          vtd %in% edges_v$vtd2)
       edges_v <- edges_v %>% 
-        mutate(weight=1, pop=0) %>%
+        mutate(weight=1,
+               district=ifelse(sep_districts, district, 0)) %>%
         nest(edges=c(-district)) %>%
-        mutate(nodes = map(edges, 
-                           ~tibble(vtd=unique(c(.x$vtd1, .x$vtd2)),
-                                   pop=0)),
+        mutate(nodes = list(nodes_v),
                graph = map2(nodes, edges, make_graph, level="vtd"),
                tree = map(graph, draw_spanning_tree),
                tree_edges = map(tree, as_data_frame))
+      tree_v <- edges_v$tree
       edges_v <- edges_v %>%
         select(tree_edges) %>%
         unnest(tree_edges) %>%
@@ -260,9 +308,44 @@ plot_full_graph <- function(plan,
     edges_v <- edges_v %>%
       mutate(vtd1=as.character(vtd1), 
              vtd2=as.character(vtd2))
-    plot_edges(g, select(edges_v, vtd1, vtd2), select(geo$latlong_vtd, -county),
-               linewidth=.5)
+   
+    if ((highlight | update_districts) & !sep_districts){
+      pop_bounds <- c(.98, 1.02)*inputs$ideal_pop
+      E_child <- V(tree_v[[1]])$name[between(V(tree_v[[1]])$childpop, 
+                                             pop_bounds[1], pop_bounds[2])]
+      E_parent <- map_chr(E_child, ~neighbors(tree_v[[1]], .x, mode="in")$name)
+      
+      if (update_districts){
+        cut_edge <- c(E_parent[1],E_child[1])
+        trees_cut <- delete.edges(tree_v[[1]],
+                                  get.edge.ids(tree_v[[1]], cut_edge)) %>%
+          decompose()
+        plan <- mutate(plan,  
+                       district=case_when( 
+                         vtd %in% V(trees_cut[[1]])$name~which_districts[1],    
+                         vtd %in% V(trees_cut[[2]])$name~which_districts[2],
+                         T~as.numeric(district)),
+                       district = as.factor(district))
+      }
+    }
+    
+    # build plot
+    g <- plot_plan_districts(plan, which_districts, which_counties,
+                             color_districts = color_districts)
+    g <- plot_edges(g, select(edges_v, vtd1, vtd2), select(geo$latlong_vtd, -county),
+                  linewidth=.5, nodesize=.5)
+    if (tree & highlight){
+      g <- plot_edges(g, tibble(id1=E_child,id2=E_parent), 
+                      latlong1=select(geo$latlong_vtd, -county),
+                      color="gray")
+    }
+    if (tree & update_districts){
+      g <- plot_edges(g, tibble(id1=E_child[1],id2=E_parent[1]), 
+                      latlong1=select(geo$latlong_vtd, -county),
+                      color="white")
+    }
   }
+  plot(g)
 }
 
 tree_plot <- function(tree){

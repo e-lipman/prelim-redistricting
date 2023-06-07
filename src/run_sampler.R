@@ -122,3 +122,52 @@ run_sampler <- function(plan_init,
        propose_rate=n_propose/iter,
        time=end$toc-end$tic)
 }
+
+get_one_iter <- function(plan, which_districts){
+  trees <- map(1:configs$num_districts, initialize_trees_district,
+               plan=plan)
+  linking <- update_linking_edges(plan, trees)
+  
+  # choose two districts to merge
+  which_linking <- filter(linking,
+                          district1 %in% which_districts,
+                          district2 %in% which_districts)
+  dont_split <- linking %>% # dont split counties that are already split
+    filter(level=="vtd",
+           !district1 %in% which_districts | 
+             !district2 %in% which_districts) %>%
+    pull(county1)
+    
+  merged <- which_linking$merged[[1]]
+    
+  G_c <- make_graph(merged$nodes_c, merged$edges_c)
+    
+  # draw tree and find cuttable edges
+  E_c=tibble()
+  while(nrow(E_c)==0){
+    T_c <- draw_spanning_tree(G_c, directed=T)
+    E_c <- get_cut_candidates_multi(T_c, merged,
+                                    dont_split = dont_split)  
+    vtd_tree <- filter(E_c,level=="vtd") %>%
+      group_by(county) %>% sample_n(1) %>% ungroup()
+  }
+  cut_edge <- sample_n(E_c,1)
+  
+  trees_old <- map(trees[which_districts], ~(.x$tree_c)) %>%
+    reduce(union)
+  vtd_old <- map_df(trees[which_districts], 
+                 ~tibble(county=names(.x$tree_v),
+                         level="Vtd",
+                         tree=.x$tree_v,
+                         external=.x$edges_vc)) %>%
+    group_by(county) %>%
+    filter(n()>1)
+  
+  trees <- update_trees(T_c,cut_edge,which_districts,trees)
+  plan <- update_plan(trees, cut_edge, which_districts, plan)
+  
+  list(T_c=T_c, E_c=E_c, vtd_tree=vtd_tree,
+       T_old=trees_old,
+       vtd_old=vtd_old,
+       plan_new=plan)
+}
